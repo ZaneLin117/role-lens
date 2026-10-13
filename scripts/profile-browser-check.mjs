@@ -19,7 +19,7 @@ const dialog=page.getByRole('dialog',{name:'个人基础信息',exact:true});
 const waitCount=n=>page.waitForFunction(n=>document.querySelector('[data-testid="result-count"]')?.textContent===new Intl.NumberFormat('zh-CN').format(n),n,{timeout:45000});
 const url=offline?pathToFileURL(path.resolve('dist/index.html')).href:'http://127.0.0.1:5173/';
 try {
-  await page.goto(url);await page.getByTestId('file-input').setInputFiles(file);await waitCount(19426);
+  await page.goto(url);await waitCount(19426);await page.locator('.loading-overlay').waitFor({state:'detached'});await page.getByTestId('file-input').setInputFiles(file);await page.locator('.source-card').getByText('当前表格',{exact:true}).waitFor();await waitCount(19426);
   await page.getByRole('button',{name:'个人信息',exact:true}).click();await dialog.waitFor();
   await dialog.getByRole('button',{name:'保存并自动筛选',exact:true}).click();
   await dialog.getByText('请补充或修正以下信息',{exact:true}).waitFor();

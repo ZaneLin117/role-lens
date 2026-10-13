@@ -14,8 +14,10 @@ const page=await browser.newPage({viewport:{width:1440,height:1000},acceptDownlo
 const errors=[];page.on('pageerror',e=>errors.push(e.message));
 const url=offline?pathToFileURL(path.join(root,'dist','index.html')).href:'http://127.0.0.1:5173/';
 try {
-  await page.goto(url);await page.getByText('把一张表，变成你的岗位清单。').waitFor();
+  await page.goto(url);await page.getByTestId('result-count').filter({hasText:'19,426'}).waitFor({timeout:45000});
+  await page.locator('.loading-overlay').waitFor({state:'detached'});
   await page.getByTestId('file-input').setInputFiles(input);
+  await page.locator('.source-card').getByText('当前表格',{exact:true}).waitFor();
   await page.getByTestId('result-count').filter({hasText:'19,426'}).waitFor({timeout:45000});
   assert.equal(await page.locator('tbody tr').count(),50);
   await page.getByRole('button',{name:'下一页',exact:true}).click();

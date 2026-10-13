@@ -1,0 +1,56 @@
+import {chromium} from '@playwright/test';
+import fs from 'node:fs';
+import path from 'node:path';
+import {pathToFileURL} from 'node:url';
+import {gunzipSync} from 'node:zlib';
+import assert from 'node:assert/strict';
+import * as XLSX from 'xlsx';
+import {parseWorkbook, filterRows, emptyFilters} from '../src/data.js';
+import {assessSheet, newProfile} from '../src/eligibility.js';
+
+const offline = process.argv.includes('--offline');
+const live = process.argv.includes('--live');
+const url = offline ? pathToFileURL(path.resolve('dist/index.html')).href : live ? 'https://zanelin117.github.io/role-lens/' : 'http://127.0.0.1:5173/';
+const workbook = parseWorkbook(gunzipSync(fs.readFileSync('src/assets/national-2027.xls.gz')));
+const browser = await chromium.launch({channel:'chrome',headless:true});
+const context = await browser.newContext({viewport:{width:1440,height:1000},acceptDownloads:true});
+if (offline) await context.setOffline(true);
+const page = await context.newPage();page.setDefaultTimeout(25000);
+const errors = []; const uploads = [];
+page.on('pageerror', e => errors.push(e.message));
+page.on('request', r => {if (['POST','PUT','PATCH'].includes(r.method())) uploads.push(r.url());});
+const waitCount = n => page.waitForFunction(n => document.querySelector('[data-testid="result-count"]')?.textContent === new Intl.NumberFormat('zh-CN').format(n), n, {timeout:45000});
+fs.mkdirSync('.local', {recursive:true});
+try {
+  await page.goto(url, {timeout:60000});
+  await waitCount(19426);
+  await page.locator('.loading-overlay').waitFor({state:'detached'});
+  assert.ok((await page.locator('.source-card').innerText()).includes('内置 · 2027 国考'));
+  assert.equal(await page.getByLabel('工作表',{exact:true}).locator('option').count(),2);
+  await page.getByLabel('工作表',{exact:true}).selectOption('1');await waitCount(686);
+  await page.getByLabel('专业关键词',{exact:true}).fill('计算机');
+  await page.getByLabel('应届 / 毕业届别',{exact:true}).selectOption('有要求');
+  await page.getByLabel('性别要求',{exact:true}).selectOption('限男性');
+  const expected = filterRows(workbook.sheets[1].rows,{...emptyFilters(),text:{专业:'计算机'},fresh:'有要求',gender:'限男性'});
+  await waitCount(expected.length);
+  const [download] = await Promise.all([page.waitForEvent('download'),page.getByRole('button',{name:'导出结果',exact:true}).click()]);
+  const exportedPath = `.local/builtin-export-${offline?'offline':live?'live':'dev'}.xlsx`;await download.saveAs(exportedPath);
+  const exported = XLSX.read(fs.readFileSync(exportedPath));const records = XLSX.utils.sheet_to_json(exported.Sheets.筛选结果);
+  assert.equal(records.length,expected.length);assert.deepEqual(records.map(r=>r.职位代码),expected.map(r=>r.cells.职位代码));
+  assert.ok(records.every(r=>r.来源工作表==='福建'));
+  await page.getByTestId('file-input').setInputFiles({name:'自定义.csv',mimeType:'text/csv',buffer:Buffer.from('\uFEFF职位代码,招考职位,工作地点,学历,专业,招考人数,备注\nCUSTOM001,自定义岗位,北京市,本科,计算机类,1,限女性')});
+  await waitCount(1);await page.locator('.source-card').getByText('当前表格',{exact:true}).waitFor();
+  assert.ok((await page.locator('tbody').innerText()).includes('CUSTOM001'));
+  await page.getByRole('button',{name:'切回内置 2027 国考',exact:true}).click();await waitCount(19426);
+  await page.reload();await waitCount(19426);
+  await page.screenshot({path:`.local/builtin-${offline?'offline':live?'live':'dev'}.png`});
+  await page.setViewportSize({width:390,height:844});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+  assert.deepEqual(errors,[]);assert.deepEqual(uploads,[]);
+
+  const person = {...newProfile(), gender:'男性', politics:'共青团员', fresh:'yes', workYears:'0', service:'none', records:[{level:'本科',degree:'学士',major:'网络工程',code:'080903',graduationYear:'2027'}]};
+  const candidates = [...assessSheet(workbook.sheets[0],person).values()].filter(a=>a.candidate).length;
+  await page.evaluate(p=>localStorage.setItem('position-filter-profile-v1',JSON.stringify(p)),person);
+  await page.reload();await waitCount(candidates);
+  await page.getByText('个人匹配已开启',{exact:false}).waitFor();
+  console.log(JSON.stringify({mode:offline?'offline':live?'live':'dev',autoLoaded:19426,fujian:686,filtered:expected.length,exported:records.length,customImport:true,restoreBuiltin:true,reload:true,rememberedProfileCandidates:candidates,mobileFits:true,uploadRequests:0,runtimeErrors:0}));
+} finally {await browser.close();}

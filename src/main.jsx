@@ -5,6 +5,8 @@ import * as XLSX from 'xlsx';
 import ParseWorker from './parser.worker?worker&inline';
 import {filterRows, emptyFilters, requirementOptions, exportRows, parseMatrix} from './data';
 import {filterOptions, isLocationColumn} from './locations';
+import builtinUrl from './assets/national-2027.xls.gz?url&inline';
+import builtinMetadata from './assets/national-2027.json';
 import './style.css';
 import ProfileDialog from './ProfileDialog';
 import {assessSheet,validateProfile,statusLabels} from './eligibility';
@@ -53,8 +55,9 @@ function demoWorkbook() {
 }
 
 function App() {
-  const [workbook, setWorkbook] = useState(null); const [sheetIndex, setSheetIndex] = useState(0); const [filename, setFilename] = useState(''); const [isDemo, setIsDemo] = useState(false);
+  const [workbook, setWorkbook] = useState(null); const [sheetIndex, setSheetIndex] = useState(0); const [filename, setFilename] = useState(''); const [isDemo, setIsDemo] = useState(false); const [isBuiltIn, setIsBuiltIn] = useState(false);
   const [busy, setBusy] = useState(false); const [error, setError] = useState(''); const [drag, setDrag] = useState(false); const [filters, setFilters] = useState(emptyFilters); const deferred = useDeferredValue(filters);
+  const [loadingKind, setLoadingKind] = useState('builtin'); const loadingRef = useRef(false);
   const [page, setPage] = useState(1); const [pageSize, setPageSize] = useState(50); const [sort, setSort] = useState({column: '', direction: 'asc'}); const [detail, setDetail] = useState(null);
   const [showHelp, setShowHelp] = useState(false); const [visibleColumns, setVisibleColumns] = useState([]); const [extraColumn, setExtraColumn] = useState('');
   const [showSearch, setShowSearch] = useState(false); const [searchDraft, setSearchDraft] = useState('');
@@ -73,20 +76,41 @@ function App() {
   useEffect(() => {if(detail && dialogRef.current) dialogRef.current.showModal();}, [detail]);
   useEffect(() => {if(showHelp && helpDialogRef.current) helpDialogRef.current.showModal();}, [showHelp]);
   useEffect(() => {if(showSearch && searchDialogRef.current) {searchDialogRef.current.showModal();searchDialogRef.current.querySelector('input')?.focus();}}, [showSearch]);
-  const initialize = (data, name, demo = false) => {
-    setWorkbook(data); setSheetIndex(0); setFilename(name); setIsDemo(demo); setFilters(emptyFilters()); setPage(1); setDetail(null); setSort({column:'',direction:'asc'}); setExtraColumn('');
+  const initialize = (data, name, demo = false, builtIn = false) => {
+    setWorkbook(data); setSheetIndex(0); setFilename(name); setIsDemo(demo); setIsBuiltIn(builtIn); setFilters(emptyFilters()); setPage(1); setDetail(null); setSort({column:'',direction:'asc'}); setExtraColumn('');
     const s = data.sheets[0]; setVisibleColumns(initialColumns.map(f => s.fields[f]).filter(Boolean).length ? initialColumns.map(f => s.fields[f]).filter(Boolean) : s.columns.slice(0,6));
   };
+  const parseBuffer = async (buffer, gzip = false) => {
+    const worker = new ParseWorker(); workerRef.current = worker;
+    try {
+      return await new Promise((resolve, reject) => {
+        worker.onmessage = e => e.data.ok ? resolve(e.data.workbook) : reject(new Error(e.data.error));
+        worker.onerror = () => reject(new Error('解析失败，请使用最新版本的 Chrome 或 Edge 重试。'));
+        worker.postMessage(gzip ? {buffer, gzip:true} : buffer, [buffer]);
+      });
+    } finally {worker.terminate(); workerRef.current = null;}
+  };
+  const loadBuiltin = async () => {
+    if (loadingRef.current) return;
+    loadingRef.current = true; setBusy(true); setLoadingKind('builtin'); setError('');
+    try {
+      const response = await fetch(builtinUrl);
+      if (!response.ok) throw new Error('无法读取内置表格');
+      const data = await parseBuffer(await response.arrayBuffer(), true);
+      initialize(data, builtinMetadata.name, false, true);
+    } catch (e) {setError(`内置岗位表加载失败：${e.message}`);}
+    finally {loadingRef.current = false; setBusy(false);}
+  };
+  useEffect(() => {loadBuiltin();}, []);
   const importFile = async file => {
-    if (!file || busy) return;
+    if (!file || loadingRef.current) return;
     setError(''); if(!/\.(xlsx?|csv)$/i.test(file.name)) {setError('请选择 .xls、.xlsx 或 .csv 表格文件。'); return;}
     if(file.size > 60*1024*1024) {setError('文件超过 60 MB，请拆分工作表后导入。'); return;}
-    setBusy(true);
+    loadingRef.current = true; setBusy(true); setLoadingKind('file');
     try {
-      const buffer = await file.arrayBuffer(); const worker = new ParseWorker(); workerRef.current = worker;
-      const data = await new Promise((resolve, reject) => {worker.onmessage = e => e.data.ok ? resolve(e.data.workbook) : reject(new Error(e.data.error));worker.onerror = () => reject(new Error('解析失败，请使用最新版本的 Chrome 或 Edge 重试。')); worker.postMessage(buffer, [buffer]);});
-      worker.terminate(); workerRef.current = null; initialize(data, file.name); setToast(`导入成功，共 ${data.sheets.length} 个有效工作表`);
-    } catch(e) {workerRef.current?.terminate(); workerRef.current = null; setError(`无法导入：${e.message}`);} finally {setBusy(false); if(fileInput.current) fileInput.current.value = '';}
+      const data = await parseBuffer(await file.arrayBuffer());
+      initialize(data, file.name); setToast(`导入成功，共 ${data.sheets.length} 个有效工作表`);
+    } catch(e) {setError(`无法导入：${e.message}`);} finally {loadingRef.current = false; setBusy(false); if(fileInput.current) fileInput.current.value = '';}
   };
   const update = (key, value) => {setFilters(prev => ({...prev, [key]: value})); setPage(1);};
   const updateMap = (key, column, value) => {setFilters(prev => ({...prev, [key]: {...prev[key], [column]: value}})); setPage(1);};
@@ -121,10 +145,10 @@ function App() {
   return <div className="app" onDragOver={e => {if(!e.dataTransfer.types.includes('Files'))return;e.preventDefault(); if(!busy) setDrag(true);}} onDragLeave={e=>{if(!e.currentTarget.contains(e.relatedTarget))setDrag(false);}} onDrop={e => {e.preventDefault();setDrag(false);importFile(e.dataTransfer.files[0]);}}>
     <input ref={fileInput} data-testid="file-input" type="file" accept=".xls,.xlsx,.csv" hidden onChange={e=>importFile(e.target.files[0])}/>
     <header className="topbar"><div className="brand"><span className="brand-icon"><FileSpreadsheet size={23}/></span><strong>岗位筛选台</strong><span className="brand-sub">让每一项报考条件，都有迹可循</span></div><div className="top-actions"><span className="local-note"><ShieldCheck size={15}/>本地处理</span><button className="secondary profile-button" aria-label="个人信息" aria-haspopup="dialog" title="填写个人信息并自动匹配" onClick={()=>setShowProfile(true)}><UserRound size={16}/><span>{profile?'修改个人信息':'个人信息'}</span></button><button className="icon-button" aria-label="使用说明" onClick={()=>setShowHelp(true)}><CircleHelp size={19}/></button><button className="primary" onClick={()=>fileInput.current.click()} disabled={busy}>{busy?<LoaderCircle size={16} className="spin"/>:<Upload size={16}/>} {busy?'正在读取…':hasData?'导入新表格':'导入表格'}</button></div></header>
-    {error && <div className="error-banner" role="alert"><span>{error}</span><button className="icon-button" aria-label="关闭错误提示" onClick={()=>setError('')}><X size={17}/></button></div>}
+    {error && <div className="error-banner" role="alert"><span>{error}</span>{loadingKind==='builtin'&&!busy&&<button className="text-button" onClick={loadBuiltin}>重试加载内置表</button>}<button className="icon-button" aria-label="关闭错误提示" onClick={()=>setError('')}><X size={17}/></button></div>}
     {hasData ? <div className="workspace">
-      <aside className="sidebar"><div className="source-card"><div className="source-icon"><FileSpreadsheet size={21}/></div><div><small>{isDemo?'演示数据 · 非真实岗位':'当前表格'}</small><strong title={filename}>{filename}</strong><span>{format(rows.length)} 个岗位 · {sheet.columns.length} 列</span></div></div>
-        <div className="field sheet-selector"><label>工作表</label><select aria-label="工作表" value={sheetIndex} onChange={e=>changeSheet(Number(e.target.value))}>{workbook.sheets.map((s,i)=><option key={s.name} value={i}>{s.name}（{format(s.rows.length)}）</option>)}</select>{workbook.skipped.length>0&&<p className="helper">已跳过 {workbook.skipped.length} 个空白或无数据工作表</p>}</div>
+      <aside className="sidebar"><div className="source-card"><div className="source-icon"><FileSpreadsheet size={21}/></div><div><small>{isDemo?'演示数据 · 非真实岗位':isBuiltIn?'内置 · 2027 国考（用户提供）':'当前表格'}</small><strong title={filename}>{filename}</strong><span>{format(rows.length)} 个岗位 · {sheet.columns.length} 列</span></div></div>
+        <div className="field sheet-selector"><label>工作表</label><select aria-label="工作表" value={sheetIndex} onChange={e=>changeSheet(Number(e.target.value))}>{workbook.sheets.map((s,i)=><option key={s.name} value={i}>{s.name}（{format(s.rows.length)}）</option>)}</select>{workbook.skipped.length>0&&<p className="helper">已跳过 {workbook.skipped.length} 个空白或无数据工作表</p>}{!isBuiltIn&&<button className="secondary builtin-button" disabled={busy} onClick={loadBuiltin}><FileSpreadsheet size={14}/>切回内置 2027 国考</button>}</div>
         <div className="filter-title"><h2><SlidersHorizontal size={17}/>筛选条件</h2><button className="text-button" onClick={()=>{setFilters(emptyFilters());setPage(1);}}><RotateCcw size={13}/>重置</button></div>
         <div className="remark-quick"><span>备注快捷筛选</span><div><button aria-pressed={filters.fresh==='有要求'} className={filters.fresh==='有要求'?'active':''} onClick={()=>update('fresh',filters.fresh==='有要求'?'':'有要求')}>应届 / 届别</button>{['限男性','限女性'].map(v=><button key={v} aria-pressed={filters.gender===v} className={filters.gender===v?'active':''} onClick={()=>update('gender',filters.gender===v?'':v)}>{v}</button>)}</div></div>
         <div className="filter-scroll"><section className="filter-section"><h3>岗位条件 <span>同一字段可多选</span></h3>
@@ -164,7 +188,7 @@ function App() {
     </dialog>}
     {showProfile&&<ProfileDialog profile={profile} remember={rememberProfile} filename={filename} onClose={()=>setShowProfile(false)} onSave={saveProfile} onDelete={deleteProfile}/>}
     {drag&&<div className="drag-overlay"><Upload size={42}/><h2>松开鼠标，导入岗位表</h2></div>}
-    {busy&&<div className="loading-overlay" role="status"><LoaderCircle size={32} className="spin"/><h2>正在读取岗位表</h2><p>解析工作表与备注要求，请稍候…</p></div>}
+    {busy&&<div className="loading-overlay" role="status"><LoaderCircle size={32} className="spin"/><h2>{loadingKind==='builtin'?'正在加载内置 2027 国考岗位表':'正在读取岗位表'}</h2><p>解析工作表与备注要求，请稍候…</p></div>}
     {toast&&<div className="toast" role="status"><Check size={16}/>{toast}</div>}
   </div>;
 }

@@ -1,0 +1,23 @@
+{
+  "name": "【优公】2027国考岗位表（含福建单独表格）(1).xls",
+  "year": 2027,
+  "sha256": "7de30abe11143a849436acdd7b582becc0b0cdc2c6bdb459d483830c0a622e0b",
+  "originalBytes": 13330944,
+  "sheets": [
+    {
+      "name": "总表",
+      "rows": 19426,
+      "columns": 27,
+      "headerRow": 2
+    },
+    {
+      "name": "福建",
+      "rows": 686,
+      "columns": 27,
+      "headerRow": 2
+    }
+  ],
+  "skipped": [
+    "Sheet1"
+  ]
+}
