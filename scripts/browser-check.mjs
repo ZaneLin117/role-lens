@@ -59,7 +59,7 @@ try {
   const selected=await page.locator('.multi[open] .option-list label').evaluateAll(nodes=>nodes.filter(n=>n.querySelector('input').checked).map(n=>n.querySelector('span').textContent));
   const educationExpected=book.sheets[1].rows.filter(r=>selected.includes(r.cells.学历)).length;
   await page.waitForFunction(n=>document.querySelector('[data-testid="result-count"]')?.textContent===String(n),educationExpected);
-  await page.getByRole('heading',{name:'找到适合你的岗位',exact:true}).click();
+  await page.getByRole('button',{name:'全部岗位',exact:true}).click();
   await page.getByRole('button',{name:'清除全部',exact:true}).click();
   await page.waitForFunction(()=>document.querySelector('[data-testid="result-count"]')?.textContent==='686');
   const [allDownload]=await Promise.all([page.waitForEvent('download'),page.getByRole('button',{name:'导出结果',exact:true}).click()]);
