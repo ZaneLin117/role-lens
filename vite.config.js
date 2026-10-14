@@ -13,4 +13,10 @@ const offlineHtml = {name: 'offline-html', enforce: 'post', generateBundle(_, bu
     delete bundle[key]; return `<style>${asset.source}</style>`;
   });
 }};
-export default defineConfig({base: './', plugins: [offlineHtml], build: {target: 'es2022', assetsInlineLimit: 10000000}, server: {port: 5173, strictPort: true, watch: {ignored: ['**/.local/**','**/vendor/**']}}});
+export default defineConfig(({mode}) => {
+  const web = mode === 'web';
+  // A .gz URL can be served with Content-Encoding:gzip and decompressed by the
+  // browser before our worker receives it. Keep the workbook as opaque bytes.
+  const output = web ? {assetFileNames: asset => asset.names.some(name => name.endsWith('.xls.gz')) ? 'assets/[name]-[hash].bin' : 'assets/[name]-[hash][extname]'} : {};
+  return {base: './', plugins: web ? [] : [offlineHtml], build: {target: 'es2022', outDir: web ? 'dist-web' : 'dist', assetsInlineLimit: web ? 4096 : 10000000, rollupOptions: {output}}, server: {port: 5173, strictPort: true, watch: {ignored: ['**/.local/**','**/vendor/**']}}};
+});

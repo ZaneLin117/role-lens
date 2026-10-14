@@ -61,6 +61,14 @@ React + Vite，SheetJS 0.20.3（官方分发包保存在 vendor，参见 https:/
 
 ## 部署
 
+### EdgeOne Pages
+
+项目根目录的 `edgeone.json` 指定安装命令 `npm ci`、构建命令 `npm run build:web`、输出目录 `dist-web`。线上版本使用独立脚本、样式及内置表格资源，避免将大段程序代码嵌进 HTML。连接 GitHub 仓库后，部署最新 `main` 即可；手动上传时上传完整 `dist-web` 文件夹。
+
+`npm run build` 仍生成单文件离线版 `dist/index.html`。自定义域名接入后，还需在 EdgeOne 域名管理中配置 HTTPS 证书，并等待证书签发和部署完成。
+
+### GitHub Pages
+
 通过 GitHub Pages 托管，无需后端服务。`.github/workflows/deploy.yml` 在推送到 `main` 或手动运行时，使用 Node.js 22 执行 `npm ci`、测试和构建，然后发布 `dist`。构建使用相对路径，同时支持仓库子路径和离线打开。
 
 仓库 Settings → Pages 的部署来源需设置为 **GitHub Actions**。成功部署后可在 Actions 中查看网页链接；后续提交到 `main` 会自动更新网站。内置 2027 国考表随网站发布；用户自己导入的表格、导出文件、个人信息和本机验证文件不随网站发布。

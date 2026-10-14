@@ -5,7 +5,7 @@ import * as XLSX from 'xlsx';
 import ParseWorker from './parser.worker?worker&inline';
 import {filterRows, emptyFilters, requirementOptions, exportRows, parseMatrix} from './data';
 import {filterOptions, isLocationColumn} from './locations';
-import builtinUrl from './assets/national-2027.xls.gz?url&inline';
+import builtinUrl from './assets/national-2027.xls.gz?url';
 import builtinMetadata from './assets/national-2027.json';
 import './style.css';
 import ProfileDialog from './ProfileDialog';

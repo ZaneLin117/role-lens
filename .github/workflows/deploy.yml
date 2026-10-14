@@ -31,7 +31,9 @@ jobs:
         run: npm ci
       - name: Test
         run: npm test
-      - name: Build web and offline app
+      - name: Build EdgeOne web app
+        run: npm run build:web
+      - name: Build offline app
         run: npm run build
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5

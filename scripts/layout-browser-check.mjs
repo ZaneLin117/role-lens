@@ -4,7 +4,7 @@ import {pathToFileURL} from 'node:url';
 import path from 'node:path';
 const browser=await chromium.launch({channel:'chrome',headless:true});
 const mode=process.argv.includes('--live')?'live':process.argv.includes('--offline')?'offline':'dev';
-const url=mode==='live'?'https://zanelin117.github.io/role-lens/':mode==='offline'?pathToFileURL(path.resolve('dist/index.html')).href:'http://127.0.0.1:5173/';
+const url=process.env.ROLELENS_TEST_URL || (mode==='live'?'https://zanelin117.github.io/role-lens/':mode==='offline'?pathToFileURL(path.resolve('dist/index.html')).href:'http://127.0.0.1:5173/');
 try {
   const page=await browser.newPage({viewport:{width:1440,height:1000},acceptDownloads:true});page.setDefaultTimeout(20000);
   const errors=[];page.on('pageerror',e=>errors.push(e.message));
